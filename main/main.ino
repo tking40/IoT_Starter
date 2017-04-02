@@ -17,6 +17,9 @@ const char* host = "api.carriots.com";
 
 int value = 0;
 const int httpPort = 80;
+int sensorPin = 0;     // the cell and 10K pulldown are connected to a0
+int sensorReading;     // the analog reading from the sensor divider
+int LEDbrightness = 0;
 
 // Init functions
 void connectWifiAccessPoint(String ssid, String password)
@@ -50,46 +53,77 @@ void setup()
 }
 
 
-  
+int lightsOn = 0;
+int lightStatus = 0;
+
   
 void loop()
 {
-	delay(1000);
-	value++;
-	publish(String(value));
-  
-	delay(9000);
+	sensorReading = analogRead(sensorPin);
+  float voltage = sensorReading * 3.3;
+  voltage /= 1024.0;
+  Serial.print(voltage);
+  Serial.println(" volts");
+  float temperatureC = (voltage - 0.5) * 100 ;  //converting from 10 mv per degree wit 500 mV offset
+                                               //to degrees ((voltage - 500mV) times 100)
+  Serial.print(temperatureC); Serial.println(" degrees C");
+  // now convert to Fahrenheit
+  float temperatureF = (temperatureC * 9.0 / 5.0) + 32.0;
+  Serial.print(temperatureF); Serial.println(" degrees F");
+
+  /*
+  if (photocellReading < 400) {
+    lightsOn = 0;
+    digitalWrite(LED_BUILTIN, LOW);
+  }
+  else if (photocellReading > 700) {
+    lightsOn = 1;
+    digitalWrite(LED_BUILTIN, HIGH);
+  }
+  if (lightsOn != lightStatus) {
+    if(lightsOn){
+      publish(String(1));
+    } else {
+      publish(String(0));
+    }
+    lightStatus = lightsOn;
+  }
+  */
+  publish(String(temperatureF));
+	delay(360000);
 }
 
 void publish(String data) {
-  String datastr = "{\"protocol\":\"v2\",\"device\":\""+String(DEVICE)+"\",\"at\":\"now\",\"data\":{\"Temperature\":"+String(data) + "}}";
+  String datastr = "{\"protocol\":\"v2\",\"device\":\""+String(DEVICE)+"\",\"at\":\"now\",\"data\":{\"Temperature\":"+String(data)+"}}";
+	//String datastr = "{\"protocol\":\"v2\",\"device\":\""+String(DEVICE)+"\",\"at\":\"now\",\"data\":{\"dynamic_conf\":1.2,\"static_conf\":1.0,\"firmware\":0.9,\"battery_level\":72}}";
+  
 	int length = datastr.length();
-	Serial.print("Data length");
-	Serial.println(length);
-	Serial.println();
-	
-	// Print request for debug purposes
- 	Serial.println("POST /streams HTTP/1.1");
-	Serial.println("Host: api.carriots.com");
-	Serial.println("Accept: application/json");
-	Serial.println("User-Agent: Arduino-Carriots");
-	Serial.println("Content-Type: application/json");
-	Serial.println("carriots.apikey: " + String(API_KEY));
-	Serial.println("Content-Length: " + String(length));
-	Serial.print("Connection: close");
-	Serial.println();
-	Serial.println(datastr);
+
 
 	// Send request
 	Serial.print("connecting to "); 
 	Serial.println(host);
 	// Use WiFiClient class to create TCP connections
 	WiFiClient client;
-	if (!client.connect(host, httpPort)) {
+  int loopNum = 0;
+	while (!client.connect(host, httpPort)) {
 		Serial.println("connection failed");
-	  return;
+    loopNum++;
+    if (loopNum > 3) {
+      Serial.println("Restarting.");
+      ESP.restart();
+    }
+    Serial.print("Retrying in ");
+    for (int i=6;i--;i>2) {
+      Serial.print(i);
+      delay(333);
+      Serial.print(".");
+      delay(333);
+      Serial.print(".");
+      delay(333);
+    }
+    Serial.print("\nConnecting...");
 	}
- 
 	if (client.connected()) {
 		Serial.println("Connected!");
 		client.println("POST /streams HTTP/1.1");
@@ -101,7 +135,6 @@ void publish(String data) {
 		client.println("Content-Length: " + String(length));
 		client.println("Connection: close");
 		client.println();
-
 		client.println(datastr);
 	}
 	else {
